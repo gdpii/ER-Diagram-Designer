@@ -14,6 +14,7 @@
       --primary-hover: #2563eb;
       --danger: #ef4444;
       --danger-hover: #dc2626;
+      --accent: #10b981;
       --text-main: #f8fafc;
       --text-muted: #94a3b8;
       --pk-color: #f59e0b;
@@ -104,10 +105,12 @@
     .btn:hover { background: var(--primary-hover); }
     .btn-secondary { background: #334155; color: #cbd5e1; }
     .btn-secondary:hover { background: #475569; }
+    .btn-accent { background: #059669; color: white; }
+    .btn-accent:hover { background: #047857; }
+    .btn-accent.active { background: #10b981; outline: 2px solid #6ee7b7; }
     .btn-danger { background: var(--danger); color: white; padding: 0.25rem 0.5rem; font-size: 0.7rem; border-radius: 4px; border:none; cursor:pointer;}
     .btn-danger:hover { background: var(--danger-hover); }
 
-    /* Form Inputs */
     label.field-label {
       font-size: 0.72rem;
       text-transform: uppercase;
@@ -126,7 +129,7 @@
     }
     select:focus, input:focus { border-color: var(--primary); }
 
-    /* Table column config card */
+    /* Table config cards */
     .table-cfg-card {
       background: #0f172a;
       border: 1px solid var(--border);
@@ -162,7 +165,7 @@
     }
     .col-checkbox-item input { accent-color: var(--primary); }
 
-    /* Relationship items in sidebar */
+    /* Relationships list */
     .rel-item {
       background: #0f172a;
       border: 1px solid var(--border);
@@ -224,6 +227,7 @@
       cursor: grab;
     }
     #canvas-container:active { cursor: grabbing; }
+    #canvas-container.crop-mode { cursor: crosshair !important; }
 
     svg#er-svg {
       width: 100%;
@@ -261,7 +265,6 @@
     .badge-pk { fill: var(--pk-color); font-size: 9px; font-weight: 800; }
     .badge-fk { fill: var(--fk-color); font-size: 9px; font-weight: 800; }
 
-    /* Rel line & Crow foot */
     .rel-line {
       fill: none;
       stroke: var(--line-color);
@@ -270,10 +273,6 @@
       opacity: 0.85;
       transition: stroke 0.2s;
     }
-    .rel-line:hover {
-      stroke: #f59e0b;
-      stroke-width: 2.5;
-    }
     .crows-foot {
       fill: none;
       stroke: var(--line-color);
@@ -281,7 +280,6 @@
       stroke-linecap: round;
     }
 
-    /* Text on Relationship Line */
     .rel-text-box {
       fill: #0f172a;
       stroke: #334155;
@@ -294,6 +292,16 @@
       font-weight: 600;
       text-anchor: middle;
       dominant-baseline: central;
+    }
+
+    /* Crop selection rectangle */
+    #selection-rect {
+      fill: rgba(59, 130, 246, 0.15);
+      stroke: #60a5fa;
+      stroke-width: 1.5;
+      stroke-dasharray: 4;
+      display: none;
+      pointer-events: none;
     }
 
     /* Floating Canvas controls */
@@ -314,13 +322,66 @@
       background: #334155;
       color: white;
       border: none;
-      width: 32px;
+      min-width: 32px;
       height: 32px;
       border-radius: 4px;
       cursor: pointer;
       font-weight: bold;
+      padding: 0 6px;
     }
     .floating-bar button:hover { background: #475569; }
+
+    /* Export Modal */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.7);
+      backdrop-filter: blur(3px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+    }
+    .modal-backdrop.open { display: flex; }
+    .modal-card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      width: 480px;
+      max-width: 90vw;
+      padding: 1.5rem;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+    }
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1.2rem;
+    }
+    .modal-header h3 { font-size: 1.1rem; color: #fff; }
+    .close-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font-size: 1.4rem;
+      cursor: pointer;
+    }
+    .modal-body {
+      display: flex;
+      flex-direction: column;
+      gap: 0.9rem;
+    }
+    .form-row {
+      display: flex;
+      flex-direction: column;
+      gap: 0.3rem;
+    }
+    .modal-footer {
+      display: flex;
+      justify-content: flex-end;
+      gap: 0.6rem;
+      margin-top: 1.5rem;
+    }
   </style>
 </head>
 <body>
@@ -329,7 +390,7 @@
   <div id="sidebar">
     <div class="panel-header">
       <h2>Physical ER Designer</h2>
-      <p>Custom column limits, selective field dropdowns, and editable relationship labels.</p>
+      <p>Custom column limits, editable labels, and layout/print export options.</p>
     </div>
 
     <!-- Navigation Tabs -->
@@ -345,15 +406,24 @@
         <label class="btn" for="fileInput">Upload Excel Schema (.xlsx)</label>
         <input type="file" id="fileInput" accept=".xlsx, .xls" />
         <button class="btn btn-secondary" id="demoBtn">Load Example Schema</button>
-        <button class="btn btn-secondary" id="exportSvgBtn">Export SVG</button>
+        <button class="btn btn-accent" id="openExportModalBtn">&#128229; Download / Export Diagram</button>
+        <button class="btn btn-secondary" id="toggleCropModeBtn">&#9986; Select Area to Download</button>
       </div>
+
+      <div id="crop-status-box" style="display:none; background:#0f172a; padding:0.6rem; border-radius:6px; border:1px solid #3b82f6; font-size:0.75rem; color:#93c5fd; margin-bottom:1rem;">
+        <strong>Selection Active:</strong> Click and drag on the canvas to draw an export frame. Click "Clear Selection" to reset.
+        <div style="margin-top: 0.4rem;">
+          <button class="btn-danger" id="clearCropBtn" style="font-size:0.68rem; padding: 3px 6px;">Clear Selection</button>
+        </div>
+      </div>
+
       <div style="font-size:0.75rem; color:var(--text-muted); line-height: 1.4;">
-        <strong>Features:</strong>
+        <strong>Capabilities:</strong>
         <ul style="margin-left: 1.2rem; margin-top: 0.3rem;">
-          <li>Each sheet represents one table.</li>
-          <li>Format-agnostic key matching connects fields automatically.</li>
-          <li>Rearrange tables directly on canvas by dragging.</li>
-          <li>Use <b>Relations</b> tab to modify any connection label.</li>
+          <li>Excel tables parsed automatically.</li>
+          <li>Format-agnostic heuristic key linking.</li>
+          <li>Interactive drag and zoom canvas.</li>
+          <li>Export with paper sizes (A4/A3/Letter) and partial-diagram crop.</li>
         </ul>
       </div>
     </div>
@@ -363,9 +433,7 @@
       <div style="margin-bottom: 0.8rem; font-size: 0.75rem; color: var(--text-muted);">
         Select which columns appear on each table or limit the maximum count.
       </div>
-      <div id="tables-visibility-container">
-        <!-- Rendered dynamically -->
-      </div>
+      <div id="tables-visibility-container"></div>
     </div>
 
     <!-- TAB 3: Manual Relationship & Label Management -->
@@ -403,6 +471,7 @@
         <g id="edges-layer"></g>
         <g id="labels-layer"></g>
         <g id="nodes-layer"></g>
+        <rect id="selection-rect" />
       </g>
     </svg>
 
@@ -410,6 +479,66 @@
       <button id="zoomInBtn">+</button>
       <button id="zoomOutBtn">-</button>
       <button id="zoomResetBtn">&#x21bb;</button>
+    </div>
+  </div>
+
+  <!-- Export / Download Modal Dialog -->
+  <div class="modal-backdrop" id="exportModal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>Export & Download Diagram</h3>
+        <button class="close-btn" id="closeExportModalBtn">&times;</button>
+      </div>
+      <div class="modal-body">
+        
+        <div class="form-row">
+          <label class="field-label">Export Scope</label>
+          <select id="exportScopeSelect">
+            <option value="all">Full Diagram (All Tables)</option>
+            <option value="selection">Selected Region / Cropped Area</option>
+          </select>
+        </div>
+
+        <div class="form-row">
+          <label class="field-label">File Format</label>
+          <select id="exportFormatSelect">
+            <option value="png">PNG Image (High Resolution)</option>
+            <option value="svg">SVG Vector Graphic</option>
+          </select>
+        </div>
+
+        <div class="form-row">
+          <label class="field-label">Paper Size / Dimensions</label>
+          <select id="paperSizeSelect">
+            <option value="auto">Auto-Fit (Content Bounding Box)</option>
+            <option value="a4">ISO A4 (210 x 297 mm)</option>
+            <option value="a3">ISO A3 (297 x 420 mm)</option>
+            <option value="letter">US Letter (8.5 x 11 in)</option>
+            <option value="legal">US Legal (8.5 x 14 in)</option>
+          </select>
+        </div>
+
+        <div class="form-row">
+          <label class="field-label">Page Orientation</label>
+          <select id="orientationSelect">
+            <option value="landscape">Landscape</option>
+            <option value="portrait">Portrait</option>
+          </select>
+        </div>
+
+        <div class="form-row">
+          <label class="field-label">Color Theme</label>
+          <select id="exportThemeSelect">
+            <option value="dark">Dark Blueprint (Matches Editor)</option>
+            <option value="light">Print Friendly (Clean White Canvas)</option>
+          </select>
+        </div>
+
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="cancelModalBtn">Cancel</button>
+        <button class="btn btn-accent" id="triggerDownloadBtn">Download File</button>
+      </div>
     </div>
   </div>
 
@@ -422,11 +551,25 @@
     let isPanning = false;
     let startX = 0, startY = 0;
 
+    // Crop / Select Region State
+    let isCropMode = false;
+    let isSelectingCrop = false;
+    let cropStart = { x: 0, y: 0 };
+    let cropBox = null; // { x, y, width, height } in SVG coordinates
+
     const ROW_HEIGHT = 24;
     const HEADER_HEIGHT = 34;
     const TABLE_WIDTH = 230;
 
-    // Tabs logic
+    // Paper sizes in pixels (at 150 DPI)
+    const PAPER_SIZES = {
+      a4: { w: 1754, h: 1240 },
+      a3: { w: 2480, h: 1754 },
+      letter: { w: 1650, h: 1275 },
+      legal: { w: 2100, h: 1275 }
+    };
+
+    // Tab Switching
     document.querySelectorAll(".tab-btn").forEach(btn => {
       btn.addEventListener("click", () => {
         document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
@@ -459,19 +602,72 @@
     // Canvas panning & zooming
     const container = document.getElementById("canvas-container");
     container.addEventListener("mousedown", (e) => {
+      if (isCropMode) {
+        // Handle Crop Box Drag
+        isSelectingCrop = true;
+        const pt = getSvgCoords(e);
+        cropStart = pt;
+        const rectEl = document.getElementById("selection-rect");
+        rectEl.setAttribute("x", pt.x);
+        rectEl.setAttribute("y", pt.y);
+        rectEl.setAttribute("width", 0);
+        rectEl.setAttribute("height", 0);
+        rectEl.style.display = "block";
+        return;
+      }
+
       if (e.target.closest(".table-node")) return;
       isPanning = true;
       startX = e.clientX - panX;
       startY = e.clientY - panY;
     });
+
     window.addEventListener("mousemove", (e) => {
+      if (isSelectingCrop) {
+        const pt = getSvgCoords(e);
+        const x = Math.min(cropStart.x, pt.x);
+        const y = Math.min(cropStart.y, pt.y);
+        const width = Math.abs(pt.x - cropStart.x);
+        const height = Math.abs(pt.y - cropStart.y);
+
+        cropBox = { x, y, width, height };
+        const rectEl = document.getElementById("selection-rect");
+        rectEl.setAttribute("x", x);
+        rectEl.setAttribute("y", y);
+        rectEl.setAttribute("width", width);
+        rectEl.setAttribute("height", height);
+        return;
+      }
+
       if (isPanning) {
         panX = e.clientX - startX;
         panY = e.clientY - startY;
         updateTransform();
       }
     });
-    window.addEventListener("mouseup", () => isPanning = false);
+
+    window.addEventListener("mouseup", () => {
+      if (isSelectingCrop) {
+        isSelectingCrop = false;
+        if (!cropBox || cropBox.width < 10 || cropBox.height < 10) {
+          clearCropSelection();
+        } else {
+          document.getElementById("crop-status-box").style.display = "block";
+        }
+      }
+      isPanning = false;
+    });
+
+    function getSvgCoords(e) {
+      const rect = container.getBoundingClientRect();
+      const clientX = e.clientX - rect.left;
+      const clientY = e.clientY - rect.top;
+      return {
+        x: (clientX - panX) / scale,
+        y: (clientY - panY) / scale
+      };
+    }
+
     container.addEventListener("wheel", (e) => {
       e.preventDefault();
       const zoomFactor = 1.1;
@@ -491,10 +687,34 @@
     document.getElementById("zoomOutBtn").onclick = () => { scale /= 1.15; updateTransform(); };
     document.getElementById("zoomResetBtn").onclick = () => { scale = 1; panX = 40; panY = 40; updateTransform(); };
 
+    // Crop Selection Handlers
+    const toggleCropBtn = document.getElementById("toggleCropModeBtn");
+    toggleCropBtn.onclick = () => {
+      isCropMode = !isCropMode;
+      if (isCropMode) {
+        toggleCropBtn.classList.add("active");
+        toggleCropBtn.innerText = "Cancel Area Selection";
+        container.classList.add("crop-mode");
+      } else {
+        toggleCropBtn.classList.remove("active");
+        toggleCropBtn.innerText = "Select Area to Download";
+        container.classList.remove("crop-mode");
+      }
+    };
+
+    function clearCropSelection() {
+      cropBox = null;
+      document.getElementById("selection-rect").style.display = "none";
+      document.getElementById("crop-status-box").style.display = "none";
+      document.getElementById("exportScopeSelect").value = "all";
+    }
+    document.getElementById("clearCropBtn").onclick = clearCropSelection;
+
     // Parse Excel Workbook
     function parseWorkbook(workbook) {
       tables = {};
       relationships = [];
+      clearCropSelection();
 
       workbook.SheetNames.forEach((sheetName, index) => {
         const sheet = workbook.Sheets[sheetName];
@@ -618,14 +838,12 @@
           </div>
         `;
 
-        // Limit event
         const limitInput = card.querySelector(".col-limit-input");
         limitInput.addEventListener("input", (e) => {
           t.maxColsLimit = Math.max(1, parseInt(e.target.value) || 1);
           renderDiagram();
         });
 
-        // Individual checkboxes event
         card.querySelectorAll('input[type="checkbox"]').forEach(cb => {
           cb.addEventListener("change", (e) => {
             const colName = e.target.dataset.col;
@@ -663,7 +881,6 @@
       refreshCols();
     }
 
-    // Add manual relationship button
     document.getElementById("addRelBtn").onclick = () => {
       const pTbl = document.getElementById("relParentTbl").value;
       const pCol = document.getElementById("relParentCol").value;
@@ -691,7 +908,6 @@
       buildColumnConfigSidebar();
     };
 
-    // Render active connections with inline label editing
     function renderActiveRelationships() {
       const list = document.getElementById("relations-list");
       if (!relationships.length) {
@@ -718,7 +934,6 @@
       `).join("");
     }
 
-    // Dynamic Label Updater
     window.updateRelLabel = function(id, newLabel) {
       const rel = relationships.find(r => r.id === id);
       if (rel) {
@@ -733,7 +948,7 @@
       renderDiagram();
     };
 
-    // Render physical diagram
+    // Render Physical Diagram
     function renderDiagram() {
       const nodesLayer = document.getElementById("nodes-layer");
       nodesLayer.innerHTML = "";
@@ -811,7 +1026,6 @@
         const midY = (y1 + y2) / 2;
         const d = `M ${x1} ${y1} C ${midX} ${y1}, ${midX} ${y2}, ${x2} ${y2}`;
 
-        // Crow's foot endpoint on Child (N-side)
         const cfDir = pIsLeft ? -1 : 1;
         const crowsFoot = `
           M ${x2} ${y2} L ${x2 + cfDir * 10} ${y2 - 7}
@@ -819,7 +1033,6 @@
           M ${x2 + cfDir * 10} ${y2 - 8} L ${x2 + cfDir * 10} ${y2 + 8}
         `;
 
-        // Render Edge
         const edgeGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
         edgeGroup.innerHTML = `
           <path d="${d}" class="rel-line" />
@@ -828,7 +1041,6 @@
         `;
         edgesLayer.appendChild(edgeGroup);
 
-        // Render Label above the cable curve
         if (rel.label) {
           const labelGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
           const lblWidth = Math.max(50, rel.label.length * 7.5 + 14);
@@ -848,6 +1060,7 @@
       let initX = 0, initY = 0;
 
       element.addEventListener("mousedown", (e) => {
+        if (isCropMode) return;
         isDragging = true;
         startMouseX = e.clientX;
         startMouseY = e.clientY;
@@ -869,7 +1082,7 @@
       window.addEventListener("mouseup", () => isDragging = false);
     }
 
-    // File input
+    // File Input
     document.getElementById("fileInput").addEventListener("change", async (e) => {
       const file = e.target.files[0];
       if (!file) return;
@@ -878,7 +1091,7 @@
       parseWorkbook(workbook);
     });
 
-    // Built-in Demo Data
+    // Demo Data
     document.getElementById("demoBtn").onclick = () => {
       const wb = XLSX.utils.book_new();
 
@@ -913,20 +1126,188 @@
       parseWorkbook(wb);
     };
 
-    // Export SVG
-    document.getElementById("exportSvgBtn").onclick = () => {
-      const svg = document.getElementById("er-svg");
-      const serializer = new XMLSerializer();
-      const source = serializer.serializeToString(svg);
-      const blob = new Blob([source], { type: "image/svg+xml;charset=utf-8" });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = "custom_physical_er_diagram.svg";
-      link.click();
+    // ==========================================
+    // EXPORT & DOWNLOAD ENGINE
+    // ==========================================
+    const exportModal = document.getElementById("exportModal");
+    const openExportModalBtn = document.getElementById("openExportModalBtn");
+    const closeExportModalBtn = document.getElementById("closeExportModalBtn");
+    const cancelModalBtn = document.getElementById("cancelModalBtn");
+    const triggerDownloadBtn = document.getElementById("triggerDownloadBtn");
+
+    openExportModalBtn.onclick = () => {
+      // Auto-set scope dropdown if user drew a crop selection
+      if (cropBox && cropBox.width > 20 && cropBox.height > 20) {
+        document.getElementById("exportScopeSelect").value = "selection";
+      } else {
+        document.getElementById("exportScopeSelect").value = "all";
+      }
+      exportModal.classList.add("open");
     };
 
-    // Auto-load demo on start
+    closeExportModalBtn.onclick = () => exportModal.classList.remove("open");
+    cancelModalBtn.onclick = () => exportModal.classList.remove("open");
+
+    triggerDownloadBtn.onclick = async () => {
+      const scope = document.getElementById("exportScopeSelect").value;
+      const format = document.getElementById("exportFormatSelect").value;
+      const paper = document.getElementById("paperSizeSelect").value;
+      const orient = document.getElementById("orientationSelect").value;
+      const theme = document.getElementById("exportThemeSelect").value;
+
+      // 1. Calculate Bounding Box of targets
+      let targetBounds = null;
+
+      if (scope === "selection" && cropBox && cropBox.width > 10 && cropBox.height > 10) {
+        targetBounds = { ...cropBox };
+      } else {
+        // Encompass all tables
+        const tblList = Object.values(tables);
+        if (!tblList.length) {
+          alert("No tables available to export.");
+          return;
+        }
+
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        tblList.forEach(t => {
+          minX = Math.min(minX, t.x);
+          minY = Math.min(minY, t.y);
+          maxX = Math.max(maxX, t.x + TABLE_WIDTH);
+          maxY = Math.max(maxY, t.y + (t.activeHeight || 150));
+        });
+
+        // Add padding around full diagram
+        const pad = 40;
+        targetBounds = {
+          x: minX - pad,
+          y: minY - pad,
+          width: (maxX - minX) + pad * 2,
+          height: (maxY - minY) + pad * 2
+        };
+      }
+
+      // 2. Resolve Canvas / Output Dimensions
+      let outW, outH;
+      if (paper === "auto") {
+        outW = targetBounds.width;
+        outH = targetBounds.height;
+      } else {
+        const base = PAPER_SIZES[paper];
+        if (orient === "landscape") {
+          outW = Math.max(base.w, base.h);
+          outH = Math.min(base.w, base.h);
+        } else {
+          outW = Math.min(base.w, base.h);
+          outH = Math.max(base.w, base.h);
+        }
+      }
+
+      // 3. Clone and Format SVG Node
+      const originalSvg = document.getElementById("er-svg");
+      const clonedSvg = originalSvg.cloneNode(true);
+
+      // Remove unwanted elements
+      const cloneSelectionRect = clonedSvg.querySelector("#selection-rect");
+      if (cloneSelectionRect) cloneSelectionRect.remove();
+
+      // Set explicit dimensions and viewBox on cloned SVG
+      clonedSvg.setAttribute("width", outW);
+      clonedSvg.setAttribute("height", outH);
+
+      // Center and fit content inside output canvas if using fixed paper
+      let fitScale = 1;
+      let shiftX = 0, shiftY = 0;
+
+      if (paper !== "auto") {
+        const scaleX = (outW * 0.9) / targetBounds.width;
+        const scaleY = (outH * 0.9) / targetBounds.height;
+        fitScale = Math.min(scaleX, scaleY, 2.0); // fit with margin
+
+        const scaledW = targetBounds.width * fitScale;
+        const scaledH = targetBounds.height * fitScale;
+        shiftX = (outW - scaledW) / 2 - targetBounds.x * fitScale;
+        shiftY = (outH - scaledH) / 2 - targetBounds.y * fitScale;
+
+        const cloneViewport = clonedSvg.querySelector("#viewport");
+        cloneViewport.setAttribute("transform", `translate(${shiftX}, ${shiftY}) scale(${fitScale})`);
+        clonedSvg.removeAttribute("viewBox");
+      } else {
+        clonedSvg.setAttribute("viewBox", `${targetBounds.x} ${targetBounds.y} ${targetBounds.width} ${targetBounds.height}`);
+        const cloneViewport = clonedSvg.querySelector("#viewport");
+        cloneViewport.setAttribute("transform", `translate(0, 0) scale(1)`);
+      }
+
+      // Handle Theme styling
+      const bgFill = (theme === "light") ? "#ffffff" : "#0b1120";
+      const bgRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+      bgRect.setAttribute("width", "100%");
+      bgRect.setAttribute("height", "100%");
+      bgRect.setAttribute("fill", bgFill);
+      clonedSvg.insertBefore(bgRect, clonedSvg.firstChild);
+
+      // Inline CSS Styles into cloned SVG so rendering on Canvas/PNG doesn't lose styles
+      const styleEl = document.createElementNS("http://www.w3.org/2000/svg", "style");
+      styleEl.textContent = `
+        text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+        .table-rect { fill: ${theme === "light" ? "#f8fafc" : "#1e293b"}; stroke: ${theme === "light" ? "#cbd5e1" : "#334155"}; stroke-width: 1.5; rx: 6; }
+        .table-header { fill: #2563eb; rx: 6; }
+        .table-title { fill: #ffffff; font-weight: 700; font-size: 13px; }
+        .col-name { font-size: 12px; fill: ${theme === "light" ? "#0f172a" : "#f1f5f9"}; }
+        .col-type { font-size: 11px; fill: ${theme === "light" ? "#64748b" : "#94a3b8"}; font-family: monospace; text-anchor: end; }
+        .badge-pk { fill: #f59e0b; font-size: 9px; font-weight: 800; }
+        .badge-fk { fill: #10b981; font-size: 9px; font-weight: 800; }
+        .rel-line { fill: none; stroke: ${theme === "light" ? "#2563eb" : "#60a5fa"}; stroke-width: 1.8; stroke-linejoin: round; }
+        .crows-foot { fill: none; stroke: ${theme === "light" ? "#2563eb" : "#60a5fa"}; stroke-width: 1.8; stroke-linecap: round; }
+        .rel-text-box { fill: ${theme === "light" ? "#ffffff" : "#0f172a"}; stroke: ${theme === "light" ? "#cbd5e1" : "#334155"}; stroke-width: 1; rx: 4; }
+        .rel-text { fill: ${theme === "light" ? "#1e40af" : "#93c5fd"}; font-size: 11px; font-weight: 600; text-anchor: middle; dominant-baseline: central; }
+      `;
+      clonedSvg.appendChild(styleEl);
+
+      const serializer = new XMLSerializer();
+      const svgString = serializer.serializeToString(clonedSvg);
+
+      if (format === "svg") {
+        // SVG Download
+        const blob = new Blob([svgString], { type: "image/svg+xml;charset=utf-8" });
+        triggerFileDownload(blob, `er_diagram_${paper}_${orient}.svg`);
+        exportModal.classList.remove("open");
+      } else {
+        // High-res PNG Download via HTML5 Canvas
+        const img = new Image();
+        const svgBlob = new Blob([svgString], { type: "image/svg+xml;charset=utf-8" });
+        const url = URL.createObjectURL(svgBlob);
+
+        img.onload = () => {
+          const canvas = document.createElement("canvas");
+          canvas.width = outW;
+          canvas.height = outH;
+          const ctx = canvas.getContext("2d");
+          ctx.fillStyle = bgFill;
+          ctx.fillRect(0, 0, outW, outH);
+          ctx.drawImage(img, 0, 0, outW, outH);
+
+          canvas.toBlob((pngBlob) => {
+            triggerFileDownload(pngBlob, `er_diagram_${paper}_${orient}.png`);
+            URL.revokeObjectURL(url);
+            exportModal.classList.remove("open");
+          }, "image/png");
+        };
+        img.src = url;
+      }
+    };
+
+    function triggerFileDownload(blob, filename) {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+    }
+
+    // Auto-load demo schema on initialization
     document.getElementById("demoBtn").click();
   </script>
 </body>
