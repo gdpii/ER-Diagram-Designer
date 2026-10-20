@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Physical ER Diagram Generator</title>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --panel: #1e293b;
+      --card-bg: #1e293b;
+      --border: #334155;
+      --header-bg: #3b82f6;
+      --header-text: #ffffff;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --pk-color: #f59e0b;
+      --fk-color: #10b981;
+      --line-color: #60a5fa;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace;
+      background: var(--bg);
+      color: var(--text-main);
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* Left Sidebar */
+    #sidebar {
+      width: 340px;
+      background: var(--panel);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      z-index: 10;
+      box-shadow: 2px 0 10px rgba(0,0,0,0.3);
+    }
+    .panel-header {
+      padding: 1rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .panel-header h2 { font-size: 1.1rem; margin-bottom: 0.4rem; color: #fff; }
+    .panel-header p { font-size: 0.78rem; color: var(--text-muted); line-height: 1.3; }
+
+    .control-group {
+      padding: 1rem;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      gap: 0.6rem;
+    }
+    input[type="file"] {
+      display: none;
+    }
+    .btn {
+      background: #2563eb;
+      color: white;
+      border: none;
+      padding: 0.55rem 0.9rem;
+      font-size: 0.8rem;
+      font-weight: 600;
+      border-radius: 6px;
+      cursor: pointer;
+      text-align: center;
+      transition: background 0.2s;
+    }
+    .btn:hover { background: #1d4ed8; }
+    .btn-secondary {
+      background: #334155;
+      color: #cbd5e1;
+    }
+    .btn-secondary:hover { background: #475569; }
+
+    #relationships-panel {
+      flex: 1;
+      overflow-y: auto;
+      padding: 1rem;
+    }
+    #relationships-panel h3 {
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      margin-bottom: 0.8rem;
+    }
+    .rel-card {
+      background: rgba(15, 23, 42, 0.6);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.5rem 0.7rem;
+      font-size: 0.75rem;
+      margin-bottom: 0.5rem;
+      line-height: 1.4;
+    }
+    .rel-card span { color: var(--line-color); font-weight: 600; }
+
+    /* Canvas Area */
+    #canvas-container {
+      flex: 1;
+      position: relative;
+      background: radial-gradient(#1e293b 1px, transparent 1px);
+      background-size: 20px 20px;
+      background-color: var(--bg);
+      overflow: hidden;
+      cursor: grab;
+    }
+    #canvas-container:active { cursor: grabbing; }
+
+    svg#er-svg {
+      width: 100%;
+      height: 100%;
+      position: absolute;
+      top: 0;
+      left: 0;
+    }
+
+    /* Canvas Controls Floating Bar */
+    .floating-bar {
+      position: absolute;
+      bottom: 20px;
+      right: 20px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 6px 10px;
+      display: flex;
+      gap: 6px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+      z-index: 10;
+    }
+    .floating-bar button {
+      background: #334155;
+      color: white;
+      border: none;
+      width: 32px;
+      height: 32px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-weight: bold;
+    }
+    .floating-bar button:hover { background: #475569; }
+
+    /* SVG Table Node Styling */
+    .table-node {
+      cursor: move;
+      user-select: none;
+    }
+    .table-rect {
+      fill: #1e293b;
+      stroke: #334155;
+      stroke-width: 1.5;
+      rx: 6;
+      filter: drop-shadow(0 6px 12px rgba(0,0,0,0.4));
+    }
+    .table-header {
+      fill: #2563eb;
+      rx: 6;
+    }
+    .table-title {
+      fill: #ffffff;
+      font-weight: 700;
+      font-size: 13px;
+      font-family: inherit;
+    }
+    .col-row:hover rect {
+      fill: rgba(255, 255, 255, 0.04);
+    }
+    .col-name {
+      font-size: 12px;
+      fill: #f1f5f9;
+      font-family: inherit;
+    }
+    .col-type {
+      font-size: 11px;
+      fill: #94a3b8;
+      font-family: monospace;
+      text-anchor: end;
+    }
+    .badge-pk {
+      fill: var(--pk-color);
+      font-size: 9px;
+      font-weight: 800;
+    }
+    .badge-fk {
+      fill: var(--fk-color);
+      font-size: 9px;
+      font-weight: 800;
+    }
+    .rel-line {
+      fill: none;
+      stroke: var(--line-color);
+      stroke-width: 1.8;
+      stroke-linejoin: round;
+      opacity: 0.85;
+      transition: stroke 0.2s;
+    }
+    .rel-line:hover {
+      stroke: #f59e0b;
+      stroke-width: 2.5;
+    }
+    .crows-foot {
+      fill: none;
+      stroke: var(--line-color);
+      stroke-width: 1.8;
+      stroke-linecap: round;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Sidebar -->
+  <div id="sidebar">
+    <div class="panel-header">
+      <h2>Physical ER Designer</h2>
+      <p>Automated relational schema diagramming with format-agnostic field mapping.</p>
+    </div>
+
+    <div class="control-group">
+      <label class="btn" for="fileInput">Upload Excel Schema (.xlsx)</label>
+      <input type="file" id="fileInput" accept=".xlsx, .xls" />
+      <button class="btn btn-secondary" id="demoBtn">Load Example Schema</button>
+      <button class="btn btn-secondary" id="exportSvgBtn">Export SVG</button>
+    </div>
+
+    <div id="relationships-panel">
+      <h3>Detected Relationships</h3>
+      <div id="rel-list"><em style="font-size:0.75rem; color:#64748b;">No relationships detected yet.</em></div>
+    </div>
+  </div>
+
+  <!-- Main Canvas -->
+  <div id="canvas-container">
+    <svg id="er-svg">
+      <defs>
+        <!-- Marker for One side (cross bar) -->
+        <marker id="marker-one" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+          <line x1="5" y1="0" x2="5" y2="10" stroke="#60a5fa" stroke-width="2" />
+        </marker>
+      </defs>
+      <g id="viewport">
+        <g id="edges-layer"></g>
+        <g id="nodes-layer"></g>
+      </g>
+    </svg>
+
+    <div class="floating-bar">
+      <button id="zoomInBtn">+</button>
+      <button id="zoomOutBtn">-</button>
+      <button id="zoomResetBtn">&#x21bb;</button>
+    </div>
+  </div>
+
+  <script>
+    // App State
+    let tables = {};
+    let relationships = [];
+    let scale = 1;
+    let panX = 40, panY = 40;
+    let isPanning = false;
+    let startX = 0, startY = 0;
+
+    const ROW_HEIGHT = 24;
+    const HEADER_HEIGHT = 34;
+    const TABLE_WIDTH = 230;
+
+    // Format-Agnostic String Canonicalizer
+    function canonicalize(str) {
+      if (!str) return "";
+      let s = String(str).toLowerCase().trim();
+      s = s.replace(/^(tbl_|table_|dim_|fact_)/, ''); // Remove table prefixes
+      s = s.replace(/[^a-z0-9]/g, '');               // Strip non-alphanumeric (spaces, _, -, etc.)
+      // Map standard abbreviation variants
+      s = s.replace(/(customer|cust)/g, 'customer');
+      s = s.replace(/(employee|emp)/g, 'employee');
+      s = s.replace(/(product|prod)/g, 'product');
+      s = s.replace(/(order|ord)/g, 'order');
+      s = s.replace(/(identifier|ident)/g, 'id');
+      return s;
+    }
+
+    // Canvas Transform
+    const viewport = document.getElementById("viewport");
+    function updateTransform() {
+      viewport.setAttribute("transform", `translate(${panX}, ${panY}) scale(${scale})`);
+    }
+
+    // Pan & Zoom handlers
+    const container = document.getElementById("canvas-container");
+    container.addEventListener("mousedown", (e) => {
+      if (e.target.closest(".table-node")) return;
+      isPanning = true;
+      startX = e.clientX - panX;
+      startY = e.clientY - panY;
+    });
+    window.addEventListener("mousemove", (e) => {
+      if (isPanning) {
+        panX = e.clientX - startX;
+        panY = e.clientY - startY;
+        updateTransform();
+      }
+    });
+    window.addEventListener("mouseup", () => isPanning = false);
+    container.addEventListener("wheel", (e) => {
+      e.preventDefault();
+      const zoomFactor = 1.1;
+      const mouseX = e.clientX - container.getBoundingClientRect().left;
+      const mouseY = e.clientY - container.getBoundingClientRect().top;
+      
+      const newScale = e.deltaY < 0 ? scale * zoomFactor : scale / zoomFactor;
+      if (newScale < 0.2 || newScale > 3.0) return;
+
+      panX = mouseX - (mouseX - panX) * (newScale / scale);
+      panY = mouseY - (mouseY - panY) * (newScale / scale);
+      scale = newScale;
+      updateTransform();
+    }, { passive: false });
+
+    document.getElementById("zoomInBtn").onclick = () => { scale *= 1.15; updateTransform(); };
+    document.getElementById("zoomOutBtn").onclick = () => { scale /= 1.15; updateTransform(); };
+    document.getElementById("zoomResetBtn").onclick = () => { scale = 1; panX = 40; panY = 40; updateTransform(); };
+
+    // Parse Excel Workbook
+    function parseWorkbook(workbook) {
+      tables = {};
+      relationships = [];
+
+      workbook.SheetNames.forEach((sheetName, index) => {
+        const sheet = workbook.Sheets[sheetName];
+        const rows = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+        if (!rows.length) return;
+
+        const cols = rows.map((r, rIdx) => {
+          const keys = Object.keys(r);
+          const colField = keys.find(k => /col|field|name/i.test(k)) || keys[0];
+          const typeField = keys.find(k => /type|data/i.test(k));
+          const keyField = keys.find(k => /key/i.test(k));
+
+          const rawName = String(r[colField]).trim();
+          const rawType = typeField ? String(r[typeField]).trim().toUpperCase() : "INT";
+          const rawKey = keyField ? String(r[keyField]).trim().toUpperCase() : "";
+
+          const isPK = rawKey.includes("PK") || canonicalize(rawName) === "id" || canonicalize(rawName) === canonicalize(sheetName) + "id";
+
+          return {
+            name: rawName,
+            canonName: canonicalize(rawName),
+            type: rawType || "VARCHAR",
+            isPK: isPK,
+            isFK: false,
+            rowOffset: HEADER_HEIGHT + rIdx * ROW_HEIGHT + ROW_HEIGHT / 2
+          };
+        });
+
+        // Grid layout calculation
+        const colsPerRow = 3;
+        const x = 50 + (index % colsPerRow) * 320;
+        const y = 50 + Math.floor(index / colsPerRow) * 280;
+
+        tables[sheetName] = {
+          name: sheetName,
+          canonName: canonicalize(sheetName),
+          cols: cols,
+          x: x,
+          y: y,
+          height: HEADER_HEIGHT + cols.length * ROW_HEIGHT + 8
+        };
+      });
+
+      detectFormatAgnosticRelationships();
+      renderDiagram();
+    }
+
+    // Relationship Inference
+    function detectFormatAgnosticRelationships() {
+      const tableNames = Object.keys(tables);
+
+      tableNames.forEach(childTblName => {
+        const childTable = tables[childTblName];
+
+        childTable.cols.forEach(col => {
+          if (col.isPK) return; // Skip composite/own primary keys
+
+          tableNames.forEach(parentTblName => {
+            if (parentTblName === childTblName) return;
+            const parentTable = tables[parentTblName];
+
+            // 1. Direct PK matching (canonicalized)
+            const matchedPK = parentTable.cols.find(pCol => pCol.isPK && pCol.canonName === col.canonName);
+            // 2. TableName + "id" pattern matching (e.g. Orders.customer_id -> Customers.id)
+            const matchesParentEntity = (col.canonName === parentTable.canonName + "id");
+            const parentHasId = parentTable.cols.find(pCol => pCol.isPK || pCol.canonName === "id");
+
+            if (matchedPK || (matchesParentEntity && parentHasId)) {
+              col.isFK = true;
+              const targetCol = matchedPK || parentHasId;
+
+              // Avoid duplicates
+              const exists = relationships.some(rel => 
+                rel.parent === parentTblName && 
+                rel.child === childTblName && 
+                rel.childCol === col.name
+              );
+
+              if (!exists) {
+                relationships.push({
+                  parent: parentTblName,
+                  parentCol: targetCol.name,
+                  child: childTblName,
+                  childCol: col.name
+                });
+              }
+            }
+          });
+        });
+      });
+
+      renderRelationshipSidebar();
+    }
+
+    function renderRelationshipSidebar() {
+      const relList = document.getElementById("rel-list");
+      if (!relationships.length) {
+        relList.innerHTML = `<em style="font-size:0.75rem; color:#64748b;">No direct relationships inferred.</em>`;
+        return;
+      }
+
+      relList.innerHTML = relationships.map(r => `
+        <div class="rel-card">
+          <span>${r.parent}</span> (${r.parentCol})<br>
+          &nbsp;&nbsp;&rdsh; <span>${r.child}</span> (${r.childCol})
+        </div>
+      `).join("");
+    }
+
+    // Render Physical Diagram (SVG Elements)
+    function renderDiagram() {
+      const nodesLayer = document.getElementById("nodes-layer");
+      const edgesLayer = document.getElementById("edges-layer");
+      nodesLayer.innerHTML = "";
+      edgesLayer.innerHTML = "";
+
+      // 1. Render Table Nodes
+      Object.values(tables).forEach(t => {
+        const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+        g.setAttribute("class", "table-node");
+        g.setAttribute("transform", `translate(${t.x}, ${t.y})`);
+        g.dataset.table = t.name;
+
+        let rowsSvg = "";
+        t.cols.forEach((col, idx) => {
+          const y = HEADER_HEIGHT + idx * ROW_HEIGHT;
+          const badge = col.isPK 
+            ? `<text x="12" y="${y + 16}" class="badge-pk">PK</text>` 
+            : (col.isFK ? `<text x="12" y="${y + 16}" class="badge-fk">FK</text>` : '');
+
+          rowsSvg += `
+            <g class="col-row">
+              <rect x="0" y="${y}" width="${TABLE_WIDTH}" height="${ROW_HEIGHT}" fill="transparent" />
+              ${badge}
+              <text x="${col.isPK || col.isFK ? 32 : 16}" y="${y + 16}" class="col-name">${col.name}</text>
+              <text x="${TABLE_WIDTH - 12}" y="${y + 16}" class="col-type">${col.type}</text>
+            </g>
+          `;
+        });
+
+        g.innerHTML = `
+          <rect class="table-rect" width="${TABLE_WIDTH}" height="${t.height}" />
+          <path d="M 0 6 A 6 6 0 0 1 6 0 L ${TABLE_WIDTH - 6} 0 A 6 6 0 0 1 ${TABLE_WIDTH} 6 L ${TABLE_WIDTH} ${HEADER_HEIGHT} L 0 ${HEADER_HEIGHT} Z" class="table-header" />
+          <text x="14" y="21" class="table-title">${t.name}</text>
+          ${rowsSvg}
+        `;
+
+        // Enable Dragging on Nodes
+        makeDraggable(g, t);
+        nodesLayer.appendChild(g);
+      });
+
+      // 2. Render Connector Cables
+      updateEdges();
+    }
+
+    function updateEdges() {
+      const edgesLayer = document.getElementById("edges-layer");
+      edgesLayer.innerHTML = "";
+
+      relationships.forEach(rel => {
+        const parentTbl = tables[rel.parent];
+        const childTbl = tables[rel.child];
+        if (!parentTbl || !childTbl) return;
+
+        const parentCol = parentTbl.cols.find(c => c.name === rel.parentCol);
+        const childCol = childTbl.cols.find(c => c.name === rel.childCol);
+        if (!parentCol || !childCol) return;
+
+        // Calculate connection ports
+        const pIsLeft = (parentTbl.x + TABLE_WIDTH / 2) < (childTbl.x + TABLE_WIDTH / 2);
+        
+        const x1 = pIsLeft ? parentTbl.x + TABLE_WIDTH : parentTbl.x;
+        const y1 = parentTbl.y + parentCol.rowOffset;
+
+        const x2 = pIsLeft ? childTbl.x : childTbl.x + TABLE_WIDTH;
+        const y2 = childTbl.y + childCol.rowOffset;
+
+        // Orthogonal Line Routing
+        const midX = (x1 + x2) / 2;
+        const d = `M ${x1} ${y1} C ${midX} ${y1}, ${midX} ${y2}, ${x2} ${y2}`;
+
+        // Crow's foot endpoint for child (N-side)
+        const cfDir = pIsLeft ? -1 : 1;
+        const crowsFoot = `
+          M ${x2} ${y2} L ${x2 + cfDir * 10} ${y2 - 7}
+          M ${x2} ${y2} L ${x2 + cfDir * 10} ${y2 + 7}
+          M ${x2 + cfDir * 10} ${y2 - 8} L ${x2 + cfDir * 10} ${y2 + 8}
+        `;
+
+        const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+        g.innerHTML = `
+          <path d="${d}" class="rel-line" />
+          <!-- 1-Side Tick -->
+          <line x1="${x1 - (pIsLeft ? -6 : 6)}" y1="${y1 - 6}" x2="${x1 - (pIsLeft ? -6 : 6)}" y2="${y1 + 6}" stroke="#60a5fa" stroke-width="2" />
+          <!-- N-Side Crow's Foot -->
+          <path d="${crowsFoot}" class="crows-foot" />
+        `;
+        edgesLayer.appendChild(g);
+      });
+    }
+
+    // Node Drag Handler
+    function makeDraggable(element, tableData) {
+      let isDragging = false;
+      let startMouseX = 0, startMouseY = 0;
+      let initX = 0, initY = 0;
+
+      element.addEventListener("mousedown", (e) => {
+        isDragging = true;
+        startMouseX = e.clientX;
+        startMouseY = e.clientY;
+        initX = tableData.x;
+        initY = tableData.y;
+        e.stopPropagation();
+      });
+
+      window.addEventListener("mousemove", (e) => {
+        if (!isDragging) return;
+        const dx = (e.clientX - startMouseX) / scale;
+        const dy = (e.clientY - startMouseY) / scale;
+        tableData.x = initX + dx;
+        tableData.y = initY + dy;
+        element.setAttribute("transform", `translate(${tableData.x}, ${tableData.y})`);
+        updateEdges();
+      });
+
+      window.addEventListener("mouseup", () => isDragging = false);
+    }
+
+    // File Input Listener
+    document.getElementById("fileInput").addEventListener("change", async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const buffer = await file.arrayBuffer();
+      const workbook = XLSX.read(buffer);
+      parseWorkbook(workbook);
+    });
+
+    // Built-in Demo Data
+    document.getElementById("demoBtn").onclick = () => {
+      const wb = XLSX.utils.book_new();
+
+      // Customers (Formats mixed: Capitalized, CamelCase)
+      const customersData = [
+        { "Field": "CustomerID", "DataType": "INT", "KeyType": "PK" },
+        { "Field": "FullName", "DataType": "VARCHAR(100)", "KeyType": "" },
+        { "Field": "EmailAddress", "DataType": "VARCHAR(255)", "KeyType": "" }
+      ];
+      // Orders (Formats mixed: lowercase, snake_case)
+      const ordersData = [
+        { "field_name": "order_id", "type": "INT", "key": "PK" },
+        { "field_name": "customer_id", "type": "INT", "key": "" }, // Inferred link to Customers.CustomerID
+        { "field_name": "order_date", "type": "DATE", "key": "" }
+      ];
+      // OrderItems
+      const itemsData = [
+        { "Column": "item_id", "Type": "INT", "Key": "PK" },
+        { "Column": "order_id", "Type": "INT", "Key": "" },        // Inferred link to orders.order_id
+        { "Column": "product_code", "Type": "INT", "Key": "" }
+      ];
+
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(customersData), "Customers");
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(ordersData), "Orders");
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(itemsData), "OrderItems");
+
+      parseWorkbook(wb);
+    };
+
+    // Export SVG
+    document.getElementById("exportSvgBtn").onclick = () => {
+      const svg = document.getElementById("er-svg");
+      const serializer = new XMLSerializer();
+      const source = serializer.serializeToString(svg);
+      const blob = new Blob([source], { type: "image/svg+xml;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "physical_er_diagram.svg";
+      link.click();
+    };
+
+    // Initialize with demo data on load
+    document.getElementById("demoBtn").click();
+  </script>
+</body>
+</html>
